@@ -1,6 +1,7 @@
 {
   "name": "compact-usage-meter",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "description": "Context, session and weekly usage meters with reset countdowns on a row under the prompt hint line",
+  "author": { "name": "dkoh0207" },
   "types": "./types/index.d.ts"
 }
