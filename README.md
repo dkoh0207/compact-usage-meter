@@ -6,11 +6,7 @@ A Claude Code mod that shows, on a row under the prompt's hint line:
 - **session-usage**: your 5-hour usage limit, with the time until it resets
 - **weekly-usage**: your 7-day usage limit, with the time until it resets
 
-```
-⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
-
-context ▰▱▱▱▱▱▱▱ 13% │ session-usage ▰▱▱▱▱▱▱▱ 10% (4h15m) │ weekly-usage ▱▱▱▱▱▱▱▱ 6% (5d00h)
-```
+![The meter under the prompt's hint line: context 12%, session-usage 42% resetting in 3h34m, weekly-usage 10% resetting in 4d23h](docs/screenshot.png)
 
 Each meter has its own color. A percentage turns yellow from 50% and red above 80%, and you get a toast when a limit reaches 80% and 95%. The countdowns refresh once a minute.
 
@@ -18,11 +14,22 @@ On narrow terminals and split panes, the row steps down to shorter forms. First 
 
 ## Install
 
+In Claude Code, run:
+
 ```
-/plugin install compact-usage-meter --marketplace OWNER/compact-usage-meter
+/plugin install compact-usage-meter --marketplace https://github.com/dkoh0207/compact-usage-meter.git
 ```
 
-Answer `y` to add the marketplace, then pick a scope. The meter shows from the next prompt on.
+Answer `y` to add the source, then pick a scope. The meter shows from the next prompt on.
+
+The short form `--marketplace dkoh0207/compact-usage-meter` works too.
+
+To try it for one session without installing, clone the repository and start Claude Code with it:
+
+```
+git clone https://github.com/dkoh0207/compact-usage-meter.git
+claude --plugin-dir compact-usage-meter
+```
 
 ## Settings
 

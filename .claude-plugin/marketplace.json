@@ -1,6 +1,6 @@
 {
   "name": "compact-usage-meter",
   "description": "Context, session and weekly usage meters for Claude Code",
-  "owner": { "name": "OWNER" },
+  "owner": { "name": "dkoh0207" },
   "plugins": [{ "name": "compact-usage-meter", "source": "./" }]
 }
