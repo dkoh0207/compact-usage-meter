@@ -20,8 +20,6 @@ In Claude Code, run:
 /plugin install compact-usage-meter --marketplace https://github.com/dkoh0207/compact-usage-meter.git
 ```
 
-Answer `y` to add the source, then pick a scope. The meter shows from the next prompt on.
-
 The short form `--marketplace dkoh0207/compact-usage-meter` works too.
 
 To try it for one session without installing, clone the repository and start Claude Code with it:
@@ -47,5 +45,3 @@ These constants are at the top of the files in `hooks/`:
 claude plugin validate .
 claude plugin test .
 ```
-
-To run a local checkout in a session, start Claude Code with `claude --plugin-dir <path to this folder>`.
