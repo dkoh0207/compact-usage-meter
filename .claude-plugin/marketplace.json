@@ -1,0 +1,6 @@
+{
+  "name": "compact-usage-meter",
+  "description": "Context, session and weekly usage meters for Claude Code",
+  "owner": { "name": "OWNER" },
+  "plugins": [{ "name": "compact-usage-meter", "source": "./" }]
+}

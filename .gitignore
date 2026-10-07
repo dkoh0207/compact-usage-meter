@@ -1,0 +1,3 @@
+node_modules/
+# Type declarations Claude Code writes on each load
+.claude-plugin/types/
