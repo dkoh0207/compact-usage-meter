@@ -1,13 +1,22 @@
 import { atom, read, update } from 'claude-code'
-import type { Color, EngineInterface, Register, SessionRateLimit, Timer } from 'claude-code'
+import type {
+  Color,
+  EngineInterface,
+  Register,
+  SessionCost,
+  SessionRateLimit,
+  Timer,
+} from 'claude-code'
 
-import { fitParts, room, SEPARATOR } from './format'
+import { BAR_GAP, fitParts, room, SEPARATOR } from './format'
 import type { Level, Part } from './format'
 import type { Reading } from '../types'
 
 const reading = atom({ plugin: 'compact-usage-meter', key: 'reading' } as const, null)
 
 const THRESHOLDS = [95, 80]
+
+const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
 
 // Blank rows between the engine's hint line and the meter.
 const GAP = 1
@@ -20,8 +29,8 @@ const NAMES: Record<string, string> = {
 // Each meter's own hue, from the theme so it suits light and dark.
 const HUES: Record<string, Color> = {
   context: 'suggestion',
-  'session-usage': 'planMode',
-  'weekly-usage': 'merged',
+  session: 'planMode',
+  weekly: 'merged',
 }
 
 // The percentage leaves the meter's hue only to warn.
@@ -31,19 +40,36 @@ const WARNINGS: Record<Level, Color | undefined> = {
   high: 'error',
 }
 
-type Figures = Omit<Reading, 'nowMs'>
+// What a usage reading carries; the model is read at draw time, the effort from turn.step.
+type Figures = Omit<Reading, 'nowMs' | 'model' | 'effort'>
 
 let tick: Timer | undefined
 const warned = new Set<string>()
 
-function toFigures(usage: { context: { percent?: number }; rateLimits: SessionRateLimit[] }): Figures {
-  return { contextPercent: usage.context.percent, rateLimits: usage.rateLimits }
+function toFigures(usage: {
+  context: { percent?: number }
+  rateLimits: SessionRateLimit[]
+  cost?: SessionCost
+}): Figures {
+  return {
+    contextPercent: usage.context.percent,
+    rateLimits: usage.rateLimits,
+    cost: usage.cost?.usd,
+  }
 }
 
 async function record($: EngineInterface, figures?: Figures) {
   const latest = figures ?? toFigures(await $.session.usage())
   const nowMs = await $.clock.now()
-  await update($, reading, () => ({ ...latest, nowMs }))
+  await update($, reading, previous => ({ ...latest, effort: previous?.effort, nowMs }))
+}
+
+// The effort of the latest main-loop request; kept across readings until the next one.
+async function noteEffort($: EngineInterface, effort: string | number | undefined) {
+  const label = effort === undefined ? undefined : String(effort)
+  await update($, reading, previous =>
+    previous === null ? previous : { ...previous, effort: label },
+  )
 }
 
 // One toast per window per threshold; re-armed once usage drops below it.
@@ -88,11 +114,44 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Effort rides on each model request. Subagents have their own; the stream passes untouched.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined) {
+      await noteEffort($, e.effort)
+    }
+
+    return yield* next(e)
+  })
+
+  // A switch from anywhere (/model, its picker, /config, a fallback) redraws now, not at the
+  // next reading; the drawing reads the model itself.
+  on('classic.PostModelSwitch', async ($, e, next) => {
+    await record($)
+
+    return next(e)
+  })
+
+  // `/effort <level>` shows at once. Its picker passes no level, so that one waits for the
+  // next request.
+  on('command.run', { command: 'effort' }, async ($, e, next) => {
+    const result = await next(e)
+    const level = e.args.trim().toLowerCase()
+
+    if (EFFORTS.has(level)) {
+      await noteEffort($, level)
+    }
+
+    return result
+  })
+
   // A row of its own, under the engine's hint line ("⏵⏵ auto mode on …").
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const engine = await next(e)
     const current = await read($, reading)
-    const parts = current === null ? undefined : fitParts(current, room(e.viewport?.columns ?? 80))
+    // Read per draw, so a /model switch shows at the next redraw, not the next reading.
+    const model = current === null ? undefined : await $.session.model()
+    const columns = e.viewport?.columns ?? 80
+    const parts = current === null ? undefined : fitParts({ ...current, model }, room(columns))
 
     if (parts === undefined) {
       return engine
@@ -101,12 +160,23 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const drawPart = (part: Part, index: number) => {
       const hue = HUES[part.label]
+      const separator = index > 0 ? <Text dimColor>{SEPARATOR}</Text> : null
+
+      // The info part is plain text: no hue, bar or percentage.
+      if (part.pct === undefined) {
+        return (
+          <Text key={`part-${index}`} wrap="truncate">
+            {separator}
+            <Text dimColor>{part.label}</Text>
+          </Text>
+        )
+      }
 
       return (
         <Text key={`part-${index}`} wrap="truncate">
-          {index > 0 ? <Text dimColor>{SEPARATOR}</Text> : null}
+          {separator}
           <Text color={hue}>{part.label} </Text>
-          {part.bar === undefined ? null : <Text color={hue}>{part.bar} </Text>}
+          {part.bar === undefined ? null : <Text color={hue}>{part.bar}{BAR_GAP} </Text>}
           <Text color={WARNINGS[part.level] ?? hue} bold={part.level !== 'low'}>{part.pct}</Text>
           {part.reset === undefined ? null : <Text dimColor> {part.reset}</Text>}
         </Text>

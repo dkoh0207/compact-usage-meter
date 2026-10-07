@@ -1,6 +1,17 @@
 import { expect, test } from 'claude-code/testing'
 
-import { cellWidth, countdown, fitParts, level, pctText, plainText, room } from './format'
+import {
+  cellWidth,
+  costText,
+  countdown,
+  DIVIDERS,
+  fitParts,
+  level,
+  modelName,
+  pctText,
+  plainText,
+  room,
+} from './format'
 import type { Reading } from '../types'
 
 const NOW = Date.parse('2026-10-07T12:00:00Z')
@@ -21,30 +32,80 @@ const fit = (cells: number, shown = reading(13)) => {
   return parts === undefined ? undefined : plainText(parts)
 }
 
+const FULL = 'context ▰▱▱▱▱▱▱▱  13% │ session ▰▱▱▱▱▱▱▱  10% (4h15m) │ weekly ▱▱▱▱▱▱▱▱  6% (5d00h)'
+const SHORT = 'context ▰▱▱▱  13% │ session ▱▱▱▱  10% (4h15m) │ weekly ▱▱▱▱  6% (5d00h)'
+const BARE = 'context 13% │ session 10% (4h15m) │ weekly 6% (5d00h)'
+const NO_RESETS = 'context 13% │ session 10% │ weekly 6%'
+
+const INFO = 'Sonnet 5.5 (xhigh)'
+const informed = (): Reading => ({
+  ...reading(13),
+  model: 'claude-sonnet-5-5',
+  effort: 'xhigh',
+  cost: 1.234,
+})
+
 test('draws every meter with full bars when there is room', () => {
-  expect(fit(200)).toBe(
-    'context ▰▱▱▱▱▱▱▱ 13% │ session-usage ▰▱▱▱▱▱▱▱ 10% (4h15m) │ weekly-usage ▱▱▱▱▱▱▱▱ 6% (5d00h)',
-  )
+  expect(fit(200)).toBe(FULL)
 })
 
 test('steps down through the forms as the room shrinks', () => {
-  const full = 'context ▰▱▱▱▱▱▱▱ 13% │ session-usage ▰▱▱▱▱▱▱▱ 10% (4h15m) │ weekly-usage ▱▱▱▱▱▱▱▱ 6% (5d00h)'
-  const short = 'context ▰▱▱▱ 13% │ session-usage ▱▱▱▱ 10% (4h15m) │ weekly-usage ▱▱▱▱ 6% (5d00h)'
-  const bare = 'context 13% │ session-usage 10% (4h15m) │ weekly-usage 6% (5d00h)'
-  const noResets = 'context 13% │ session-usage 10% │ weekly-usage 6%'
+  expect([fit(83), fit(82), fit(71), fit(70), fit(53), fit(52), fit(37), fit(36), fit(11), fit(10)]).toEqual([
+    FULL, SHORT, SHORT, BARE, BARE, NO_RESETS, NO_RESETS, 'context 13%', 'context 13%', undefined,
+  ])
+})
 
-  expect([fit(92), fit(91), fit(80), fit(79), fit(65), fit(64), fit(49), fit(48), fit(11), fit(10)]).toEqual([
-    full, short, short, bare, bare, noResets, noResets, 'context 13%', 'context 13%', undefined,
+test('leads with model and effort when there is room', () => {
+  expect(fit(200, informed())).toBe(`${INFO} │ ${FULL}`)
+})
+
+test('drops the model line before any meter shrinks', () => {
+  const shown = informed()
+
+  expect([fit(104, shown), fit(103, shown), fit(83, shown), fit(82, shown)]).toEqual([
+    `${INFO} │ ${FULL}`, FULL, FULL, SHORT,
+  ])
+})
+
+test('shows cost only where it is billed: off a subscription, once spent', () => {
+  const api: Reading = { contextPercent: 13, nowMs: NOW, rateLimits: [], model: 'claude-sonnet-5-5' }
+
+  expect([
+    fit(200, { ...api, cost: 1.234 }),
+    fit(200, { ...api, cost: 0 }),
+    fit(200, informed()),
+  ]).toEqual([
+    'Sonnet 5.5 · $1.23 │ context ▰▱▱▱▱▱▱▱  13%',
+    'Sonnet 5.5 │ context ▰▱▱▱▱▱▱▱  13%',
+    `${INFO} │ ${FULL}`,
+  ])
+})
+
+test('shows what is known of the model line', () => {
+  const known = reading(13)
+
+  expect([
+    fit(200, { ...known, model: 'opus' }),
+    fit(200, { ...known, model: 'claude-haiku-4-5-20251001', effort: 'low' }),
+    fit(200, { ...known, model: 'sonnet', cost: 0 }),
+    fit(200, { ...known, effort: 'high', cost: 2 }),
+  ]).toEqual([
+    `Opus │ ${FULL}`,
+    `Haiku 4.5 (low) │ ${FULL}`,
+    `Sonnet │ ${FULL}`,
+    FULL,
   ])
 })
 
 test('never exceeds the room at any size', () => {
-  for (const ambiguousWidth of [1, 2]) {
-    for (let cells = 0; cells <= 200; cells += 1) {
-      const parts = fitParts(reading(13), cells, { ambiguousWidth })
+  for (const shown of [reading(13), informed()]) {
+    for (const ambiguousWidth of [1, 2]) {
+      for (let cells = 0; cells <= 200; cells += 1) {
+        const parts = fitParts(shown, cells, { ambiguousWidth })
 
-      if (parts !== undefined) {
-        expect(cellWidth(plainText(parts), ambiguousWidth)).toBeLessThanOrEqual(cells)
+        if (parts !== undefined) {
+          expect(cellWidth(plainText(parts), ambiguousWidth)).toBeLessThanOrEqual(cells)
+        }
       }
     }
   }
@@ -62,7 +123,7 @@ test('fits the room at every value and countdown', () => {
         ],
       }
 
-      for (const cells of [11, 49, 65, 80, 92]) {
+      for (const cells of [11, 37, 53, 71, 83]) {
         expect(cellWidth(fit(cells, shown) ?? '')).toBeLessThanOrEqual(cells)
       }
     }
@@ -91,6 +152,29 @@ test('writes percentages and countdowns without padding', () => {
   ]).toEqual(['now', '45m', '4h15m', '14h', '5d00h', '--'])
 })
 
+test('names models from ids and aliases', () => {
+  expect([
+    modelName('claude-sonnet-5-5'),
+    modelName('claude-haiku-4-5-20251001'),
+    modelName('claude-opus-4-20250514'),
+    modelName('claude-3-5-sonnet-20241022'),
+    modelName('claude-fable-5-1'),
+    modelName('opus[1m]'),
+    modelName('sonnet'),
+    modelName('my-gateway/model'),
+  ]).toEqual([
+    'Sonnet 5.5', 'Haiku 4.5', 'Opus 4', 'Sonnet 3.5', 'Fable 5.1', 'Opus', 'Sonnet', 'my-gateway/model',
+  ])
+})
+
+test('both dividers take the same room, so the tiers hold', () => {
+  expect(cellWidth(DIVIDERS.bar)).toBe(cellWidth(DIVIDERS.dot))
+})
+
+test('writes cost in dollars and cents', () => {
+  expect([costText(0), costText(1.234), costText(142.5)]).toEqual(['$0.00', '$1.23', '$142.50'])
+})
+
 test('shows context alone before any rate-limit reading', () => {
-  expect(fit(200, { nowMs: NOW, rateLimits: [] })).toBe('context ▱▱▱▱▱▱▱▱ --%')
+  expect(fit(200, { nowMs: NOW, rateLimits: [] })).toBe('context ▱▱▱▱▱▱▱▱  --%')
 })

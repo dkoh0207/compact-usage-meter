@@ -8,15 +8,22 @@ export const GLYPHS: Glyphs = 'blocks'
 // Cells per ▰/▱; set 2 where an East-Asian locale draws ambiguous glyphs wide.
 export const AMBIGUOUS_WIDTH = 1
 
-export const SEPARATOR = ' │ '
+// 'bar' puts │ between the meters, 'dot' puts · there; both take one cell.
+export const DIVIDER: Divider = 'bar'
+export const DIVIDERS = { bar: '│', dot: '·' } as const
 
+export const SEPARATOR = ` ${DIVIDERS[DIVIDER]} `
+const INFO_SEPARATOR = ' · '
+
+export type Divider = keyof typeof DIVIDERS
 export type Glyphs = 'blocks' | 'ascii'
 export type Level = 'low' | 'mid' | 'high'
 
+// The info part (model, effort, cost) is label-only: no bar, no percentage.
 export type Part = {
   label: string
   bar?: string
-  pct: string
+  pct?: string
   reset?: string
   level: Level
 }
@@ -26,20 +33,22 @@ export type FitOptions = {
   ambiguousWidth?: number
 }
 
-type Tier = { barCells: number; hasResets: boolean; hasLimits: boolean }
+type Tier = { barCells: number; hasResets: boolean; hasLimits: boolean; hasInfo: boolean }
 
-// Richest first; the first that fits the room is drawn.
+// Richest first; the first that fits the room is drawn. Only the richest carries
+// the info part, so it is the first thing to go when the room narrows.
 const TIERS: Tier[] = [
-  { barCells: 8, hasResets: true, hasLimits: true },
-  { barCells: 4, hasResets: true, hasLimits: true },
-  { barCells: 0, hasResets: true, hasLimits: true },
-  { barCells: 0, hasResets: false, hasLimits: true },
-  { barCells: 0, hasResets: false, hasLimits: false },
+  { barCells: 8, hasResets: true, hasLimits: true, hasInfo: true },
+  { barCells: 8, hasResets: true, hasLimits: true, hasInfo: false },
+  { barCells: 4, hasResets: true, hasLimits: true, hasInfo: false },
+  { barCells: 0, hasResets: true, hasLimits: true, hasInfo: false },
+  { barCells: 0, hasResets: false, hasLimits: true, hasInfo: false },
+  { barCells: 0, hasResets: false, hasLimits: false, hasInfo: false },
 ]
 
 const LIMITS = [
-  { kind: 'five_hour', label: 'session-usage' },
-  { kind: 'seven_day', label: 'weekly-usage' },
+  { kind: 'five_hour', label: 'session' },
+  { kind: 'seven_day', label: 'weekly' },
 ] as const
 
 const BAR = {
@@ -113,6 +122,54 @@ export const countdown = (resetsAt: string | undefined, nowMs: number) => {
     : `${days}d`
 }
 
+const title = (family: string, major?: string, minor?: string) => {
+  const name = family.charAt(0).toUpperCase() + family.slice(1)
+
+  return major === undefined ? name : `${name} ${major}${minor === undefined ? '' : `.${minor}`}`
+}
+
+// 'claude-sonnet-5-5' -> 'Sonnet 5.5', 'claude-haiku-4-5-20251001' -> 'Haiku 4.5',
+// 'claude-3-5-sonnet-20241022' -> 'Sonnet 3.5', 'opus[1m]' -> 'Opus'; anything else as given.
+export const modelName = (id: string) => {
+  const bare = id.replace(/\[[^\]]*\]$/, '')
+  const named = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(bare)
+  const numbered = /^claude-(\d+)(?:-(\d{1,2}))?-([a-z]+)(?:-\d{8})?$/.exec(bare)
+
+  if (named !== null) {
+    return title(named[1], named[2], named[3])
+  }
+
+  if (numbered !== null) {
+    return title(numbered[3], numbered[1], numbered[2])
+  }
+
+  return /^[a-z]+$/.test(bare) ? title(bare) : bare
+}
+
+// '$0.00', '$1.23', '$142.50'.
+export const costText = (usd: number) => `$${usd.toFixed(2)}`
+
+// Only a subscription reports 5-hour and 7-day windows; its cost is a list-price estimate,
+// not a bill, so it is left out. Nothing spent yet shows nothing either way.
+const isBilled = ({ rateLimits, cost }: Reading) =>
+  cost !== undefined && cost > 0 && !rateLimits.some(r => LIMITS.some(l => l.kind === r.kind))
+
+const info = (reading: Reading): Part | undefined => {
+  const { model, effort, cost = 0 } = reading
+
+  return model === undefined
+    ? undefined
+    : {
+        label: [
+          `${modelName(model)}${effort === undefined ? '' : ` (${effort})`}`,
+          isBilled(reading) ? costText(cost) : undefined,
+        ]
+          .filter(piece => piece !== undefined)
+          .join(INFO_SEPARATOR),
+        level: 'low',
+      }
+}
+
 const part = (
   label: string,
   pct: number | undefined,
@@ -128,7 +185,10 @@ const part = (
 })
 
 export const segments = (reading: Reading, tier: Tier, glyphs: Glyphs = GLYPHS) => {
-  const parts = [part('context', reading.contextPercent, tier, glyphs)]
+  const lead = tier.hasInfo ? info(reading) : undefined
+  const parts: Part[] = lead === undefined ? [] : [lead]
+
+  parts.push(part('context', reading.contextPercent, tier, glyphs))
 
   if (!tier.hasLimits) {
     return parts
@@ -146,9 +206,14 @@ export const segments = (reading: Reading, tier: Tier, glyphs: Glyphs = GLYPHS) 
   return parts
 }
 
+// One space beyond the usual, after a bar, so the number does not crowd the glyphs.
+export const BAR_GAP = ' '
+
 // One part as drawn: the register's tree puts exactly these spaces between its Texts.
 export const partText = ({ label, bar, pct, reset }: Part) =>
-  [label, bar, pct, reset].filter(piece => piece !== undefined).join(' ')
+  [label, bar === undefined ? undefined : `${bar}${BAR_GAP}`, pct, reset]
+    .filter(piece => piece !== undefined)
+    .join(' ')
 
 export const plainText = (parts: Part[]) => parts.map(partText).join(SEPARATOR)
 
