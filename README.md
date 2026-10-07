@@ -2,14 +2,15 @@
 
 A Claude Code mod that shows, on a row under the prompt's hint line:
 
-- **model**: the model and its effort, e.g. `Sonnet 5.5 (xhigh)`, and, when you pay per token (an API key or a cloud provider), the session's cost so far, e.g. `$1.23`, as `/cost` totals it. On a subscription the cost is hidden: it is a list-price estimate, not a bill. The model and effort update as soon as you change them with `/model` or `/effort <level>`; otherwise the effort appears after the first turn.
+- **model**: the model and its effort, e.g. `Sonnet 5.5 (xhigh)`
+- **Cost**: The total cost of the API billing rate. For subscription plans, this is hidden. 
 - **context**: how full the conversation's context window is
 - **session**: your 5-hour usage limit, with the time until it resets
 - **weekly**: your 7-day usage limit, with the time until it resets
 
+### Example:
+--------------
 ![The meter under the prompt's hint line: context 12%, session 42% resetting in 3h34m, weekly 10% resetting in 4d23h](docs/screenshot.png)
-
-Each meter has its own color. A percentage turns yellow from 50% and red above 80%, and you get a toast when a limit reaches 80% and 95%. The countdowns refresh once a minute.
 
 On narrow terminals and split panes, the row steps down to shorter forms. First the model line goes, then the bars shrink, then they're dropped, then the reset times, and finally only context is left.
 
@@ -38,7 +39,7 @@ These constants are at the top of the files in `hooks/`:
 | --- | --- | --- |
 | `GAP` | `register.tsx` | Blank rows between the hint line and the meter (default `1`) |
 | `GLYPHS` | `format.ts` | `'blocks'` draws `▰▱`; `'ascii'` draws `#-` for fonts that render the blocks badly |
-| `DIVIDER` | `format.ts` | `'bar'` puts `│` between the meters (default); `'dot'` puts a center-dot `·` there |
+| `DIVIDER` | `format.ts` | `'bar'` puts `│` between the meters (default); `'dot'` puts a center-dot `·` |
 | `AMBIGUOUS_WIDTH` | `format.ts` | Set to `2` if your locale draws `▰▱` double-width (some East Asian setups) |
 
 ## Development
